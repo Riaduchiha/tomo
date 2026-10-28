@@ -1,0 +1,11 @@
+{
+  "name": "Tomo",
+  "tagline": "Coffee · Brunch · Bakery",
+  "footer": "Coffee and friends, the perfect blend",
+     "hero": { "bg": "/images/hero.jpg" },
+  "logo": { "src": "/logo.png", "width": 320, "position": "center" },
+  "sections": {
+    "brunch-sucre": { "bg": "", "photos": [ { "src": "", "caption": "Pancakes", "arrow": "Chocolate drizzle" } ] },
+    "cookies": { "bg": "", "photos": [] }
+  }
+}
