@@ -1,7 +1,7 @@
-
 'use client';
 import { useEffect, useState } from 'react';
 import { sb } from '../../lib/supabase';
+import CropModal from '../../components/CropModal';
 import localMenu from '../../data/menu.json';
 import localSite from '../../data/site.json';
 import './admin.css';
@@ -9,24 +9,41 @@ import './admin.css';
 const POS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const slug = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'cat' + Date.now();
 
-function Pick({ value, onChange, label }) {
+function Pick({ value, onChange, label, crop }) {
   const [busy, setBusy] = useState(false);
+  const [rawSrc, setRawSrc] = useState(null);
 
-  async function pick(e) {
-    const f = e.target.files[0];
-    if (!f) return;
-
+  async function upload(file, name) {
     setBusy(true);
     try {
-      const n = Date.now() + '-' + f.name.replace(/[^\w.-]/g, '_');
-      const { error } = await sb().storage.from('media').upload(n, f);
+      const { error } = await sb().storage.from('media').upload(name, file, { contentType: file.type });
       if (error) throw error;
-      onChange(sb().storage.from('media').getPublicUrl(n).data.publicUrl);
+      onChange(sb().storage.from('media').getPublicUrl(name).data.publicUrl);
     } catch (err) {
       alert('Envoi impossible : ' + err.message);
     }
     setBusy(false);
+  }
+
+  function pick(e) {
+    const f = e.target.files[0];
     e.target.value = '';
+    if (!f) return;
+    if (crop) {
+      setRawSrc(URL.createObjectURL(f));
+    } else {
+      upload(f, Date.now() + '-' + f.name.replace(/[^\w.-]/g, '_'));
+    }
+  }
+
+  function closeCrop() {
+    if (rawSrc && rawSrc.startsWith('blob:')) URL.revokeObjectURL(rawSrc);
+    setRawSrc(null);
+  }
+
+  async function cropped(blob) {
+    closeCrop();
+    await upload(blob, Date.now() + '-produit.webp');
   }
 
   return (
@@ -36,7 +53,11 @@ function Pick({ value, onChange, label }) {
         {busy ? 'Envoi…' : label || 'Choisir une image'}
         <input type="file" accept="image/*" hidden onChange={pick} />
       </label>
+      {crop && value && (
+        <button className="lnk" onClick={() => setRawSrc(value)}>Recadrer</button>
+      )}
       {value && <button className="lnk" onClick={() => onChange('')}>Retirer</button>}
+      {rawSrc && <CropModal src={rawSrc} onCancel={closeCrop} onDone={cropped} />}
     </div>
   );
 }
@@ -209,6 +230,28 @@ export default function Admin() {
                   value={it.price}
                   onChange={(e) => edit((n) => { n.menu.categories[ci].items[ii].price = +e.target.value; })}
                 />
+                <button
+                  className="lnk"
+                  title="Monter"
+                  disabled={ii === 0}
+                  onClick={() => edit((n) => {
+                    const a = n.menu.categories[ci].items;
+                    [a[ii - 1], a[ii]] = [a[ii], a[ii - 1]];
+                  })}
+                >
+                  ↑
+                </button>
+                <button
+                  className="lnk"
+                  title="Descendre"
+                  disabled={ii === c.items.length - 1}
+                  onClick={() => edit((n) => {
+                    const a = n.menu.categories[ci].items;
+                    [a[ii + 1], a[ii]] = [a[ii], a[ii + 1]];
+                  })}
+                >
+                  ↓
+                </button>
                 <button className="lnk red" onClick={() => confirm('Supprimer ce produit ?') && edit((n) => {
                   n.menu.categories[ci].items.splice(ii, 1);
                 })}>
@@ -223,10 +266,46 @@ export default function Admin() {
               />
 
               <Pick
+                crop
                 value={it.photo || ''}
                 label="Photo du produit"
                 onChange={(u) => edit((n) => { n.menu.categories[ci].items[ii].photo = u; })}
               />
+
+              <div className="row">
+                <label className="grow">Assiette sous le produit
+                  <select
+                    value={it.plate || ''}
+                    onChange={(e) => edit((n) => { n.menu.categories[ci].items[ii].plate = e.target.value; })}
+                  >
+                    <option value="">Aucune</option>
+                    <option value="white">Assiette blanche</option>
+                    <option value="wood">Planche en bois</option>
+                    <option value="slate">Ardoise noire</option>
+                    <option value="custom">Mon image d’assiette</option>
+                  </select>
+                </label>
+              </div>
+
+              {it.plate === 'custom' && (
+                <Pick
+                  value={it.plateImg || ''}
+                  label="Image de l’assiette"
+                  onChange={(u) => edit((n) => { n.menu.categories[ci].items[ii].plateImg = u; })}
+                />
+              )}
+
+              {it.plate && (
+                <label>Taille du produit sur l’assiette : {it.plateScale || 80}%
+                  <input
+                    type="range"
+                    min="40"
+                    max="100"
+                    value={it.plateScale || 80}
+                    onChange={(e) => edit((n) => { n.menu.categories[ci].items[ii].plateScale = +e.target.value; })}
+                  />
+                </label>
+              )}
 
               <Pick
                 value={it.hero || ''}
@@ -273,6 +352,7 @@ export default function Admin() {
                 price: 0,
                 photo: '',
                 hero: '',
+                plate: '',
                 arrows: []
               });
             })}>

@@ -1,4 +1,3 @@
-
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { MotionConfig, motion, useScroll, useTransform, useMotionValueEvent } from 'framer-motion';
@@ -49,6 +48,11 @@ const isFeat = (it) => it.photo || (it.arrows && it.arrows.length);
 const AUTO = ['top-left', 'bottom-right', 'bottom-left', 'top-right'];
 
 function Feat({ it }) {
+  const plateStyle = { '--ps': (it.plateScale || 80) + '%' };
+  if (it.plate === 'custom' && it.plateImg) {
+    plateStyle.backgroundImage = `url("${it.plateImg}")`;
+  }
+
   return (
     <Reveal>
       <article
@@ -66,7 +70,8 @@ function Feat({ it }) {
 
         <div className="stage">
           <motion.div
-            className="fphoto"
+            className={`fphoto${it.plate ? ' plate-' + it.plate : ''}`}
+            style={plateStyle}
             initial={{ scale: 0.85, opacity: 0 }}
             whileInView={{ scale: 1, opacity: 1 }}
             viewport={{ once: true }}

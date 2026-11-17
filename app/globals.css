@@ -38,8 +38,8 @@ footer{background:var(--dark);color:var(--light);text-align:center;padding:3rem 
 .feat h3{font-family:var(--serif),serif;font-size:1.35rem;margin:0;color:var(--ink)}
 .fd{margin:.3rem 0 0;color:var(--muted);font-size:.88rem}
 .stage{position:relative;padding:3.6rem 0;margin:.4rem 0}
-.fphoto{width:62%;aspect-ratio:1;border-radius:50%;margin:0 auto;overflow:hidden;background:var(--bg);display:grid;place-items:center;color:var(--muted);font-size:.8rem;box-shadow:0 14px 24px -12px #0006}
-.fphoto img{width:100%;height:100%;object-fit:cover}
+.fphoto{width:62%;aspect-ratio:1;border-radius:50%;margin:0 auto;overflow:hidden;background:transparent;display:grid;place-items:center;color:var(--muted);font-size:.8rem}
+.fphoto img{width:100%;height:100%;object-fit:cover;filter:drop-shadow(0 12px 16px rgba(0,0,0,.45))}
 .lab{position:absolute;display:flex;flex-direction:column;align-items:flex-start;max-width:42%;font-family:var(--serif),serif;font-size:.9rem;line-height:1.2;color:var(--ink);text-align:left}
 .lab svg{margin-top:.2rem}
 .top-left{top:0;left:0}.top-right{top:0;right:0;align-items:flex-end;text-align:right}.top-right svg{transform:scaleX(-1)}
@@ -108,7 +108,25 @@ footer{background:var(--dark);color:var(--light);text-align:center;padding:3rem 
   color: #fff;
   text-shadow: 0 1px 5px #0008;
 }
-
-.feat.has-hero .fphoto {
-  border: 2px solid rgba(255, 255, 255, 0.7);
+/* Assiettes sous le produit */
+.fphoto.plate-white{
+  background:radial-gradient(circle,#fff 0 58%,#e4e4e4 60%,#f8f8f8 64%,#fff 100%);
+  box-shadow:0 14px 24px -12px #0006;
+}
+.fphoto.plate-wood{
+  background:repeating-linear-gradient(90deg,#a9743f 0 16px,#8f5f30 16px 18px,#b07d48 18px 34px);
+  box-shadow:0 14px 24px -12px #0006;
+}
+.fphoto.plate-slate{
+  background:radial-gradient(circle at 35% 30%,#3a3a3a,#161616);
+  box-shadow:0 14px 24px -12px #0006;
+}
+.fphoto.plate-custom{
+  background-size:cover;
+  background-position:center;
+}
+.fphoto[class*="plate-"] img{
+  width:var(--ps,80%);
+  height:var(--ps,80%);
+  object-fit:contain;
 }
