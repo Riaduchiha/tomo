@@ -5,9 +5,35 @@ import CropModal from '../../components/CropModal';
 import localMenu from '../../data/menu.json';
 import localSite from '../../data/site.json';
 import './admin.css';
+import { compressImage, extFromType } from '../../lib/compressImage';
 
 const POS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
 const slug = (t) => t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'cat' + Date.now();
+
+// ---- Outils pour « Optimiser toutes les photos » ----
+const MEDIA = '/storage/v1/object/public/media/';
+
+// Récupère toutes les adresses de photos Supabase présentes dans les données
+function collectMedia(v, out = new Set()) {
+  if (typeof v === 'string') {
+    if (v.includes(MEDIA)) out.add(v);
+  } else if (Array.isArray(v)) {
+    v.forEach((x) => collectMedia(x, out));
+  } else if (v && typeof v === 'object') {
+    Object.values(v).forEach((x) => collectMedia(x, out));
+  }
+  return out;
+}
+
+// Remplace partout les anciennes adresses par les nouvelles
+function swapMedia(v, map) {
+  if (typeof v === 'string') return map.get(v) ?? v;
+  if (Array.isArray(v)) return v.map((x) => swapMedia(x, map));
+  if (v && typeof v === 'object') {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swapMedia(x, map)]));
+  }
+  return v;
+}
 
 function Pick({ value, onChange, label, crop }) {
   const [busy, setBusy] = useState(false);
@@ -16,13 +42,25 @@ function Pick({ value, onChange, label, crop }) {
   async function upload(file, name) {
     setBusy(true);
     try {
-      const { error } = await sb().storage.from('media').upload(name, file, { contentType: file.type });
+      // Compression sans perte visible (WebP 90 %, 2000 px max).
+      // Le résultat n’est jamais plus lourd que l’original.
+      const out = await compressImage(file);
+      const finalName = name.replace(/\.[^.]+$/, '') + '.' + extFromType(out.type);
+
+      const { error } = await sb().storage.from('media').upload(finalName, out, {
+        contentType: out.type,
+        cacheControl: '31536000',
+        upsert: false
+      });
+
       if (error) throw error;
-      onChange(sb().storage.from('media').getPublicUrl(name).data.publicUrl);
+
+      onChange(sb().storage.from('media').getPublicUrl(finalName).data.publicUrl);
     } catch (err) {
       alert('Envoi impossible : ' + err.message);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   function pick(e) {
@@ -96,6 +134,7 @@ export default function Admin() {
   const [session, setSession] = useState(null);
   const [data, setData] = useState(null);
   const [msg, setMsg] = useState('');
+  const [bulk, setBulk] = useState(null); // état de « Optimiser toutes les photos »
 
   useEffect(() => {
     if (!configured) return;
@@ -141,6 +180,71 @@ export default function Admin() {
     setMsg(error ? 'Erreur : ' + error.message : 'Enregistré ✓ (visible sur le site dans ~10 secondes)');
   };
 
+  // Recompresse toutes les photos déjà envoyées, puis remplace leurs adresses.
+  // Les originaux restent dans Supabase. Il faut ensuite cliquer sur « Enregistrer ».
+  async function optimizeAll() {
+    const urls = [...collectMedia([data.menu, data.site])].filter((u) => !u.includes('-opt-'));
+
+    if (!urls.length) {
+      setBulk({ running: false, text: 'Aucune photo à optimiser.' });
+      return;
+    }
+    if (!confirm(`Optimiser ${urls.length} photo(s) ? Les originaux restent dans Supabase. Pense à cliquer sur « Enregistrer » ensuite.`)) return;
+
+    const map = new Map();
+    let before = 0;
+    let after = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (let i = 0; i < urls.length; i++) {
+      setBulk({ running: true, text: `Photo ${i + 1} sur ${urls.length}…` });
+      try {
+        const res = await fetch(urls[i]);
+        if (!res.ok) throw new Error('lecture impossible');
+        const blob = await res.blob();
+        const fileName = decodeURIComponent(urls[i].split('/').pop().split('?')[0]);
+        const original = new File([blob], fileName, { type: blob.type });
+
+        const out = await compressImage(original);
+        if (out === original) { skipped++; continue; } // déjà légère
+
+        const base = fileName.replace(/\.[^.]+$/, '').replace(/[^\w.-]/g, '_');
+        const finalName = `${Date.now()}-${i}-opt-${base}.${extFromType(out.type)}`;
+
+        const { error } = await sb().storage.from('media').upload(finalName, out, {
+          contentType: out.type,
+          cacheControl: '31536000',
+          upsert: false
+        });
+        if (error) throw error;
+
+        map.set(urls[i], sb().storage.from('media').getPublicUrl(finalName).data.publicUrl);
+        before += original.size;
+        after += out.size;
+      } catch {
+        failed++;
+      }
+    }
+
+    if (map.size) {
+      edit((n) => {
+        n.menu = swapMedia(n.menu, map);
+        n.site = swapMedia(n.site, map);
+      });
+    }
+
+    const mb = (b) => (b / 1048576).toFixed(1);
+    setBulk({
+      running: false,
+      text:
+        `Terminé : ${map.size} photo(s) optimisée(s) (${mb(before)} Mo → ${mb(after)} Mo)` +
+        (skipped ? `, ${skipped} déjà légère(s)` : '') +
+        (failed ? `, ${failed} échec(s)` : '') +
+        (map.size ? '. Clique sur « Enregistrer » pour appliquer.' : '.')
+    });
+  }
+
   const { site, menu } = data;
 
   return (
@@ -157,6 +261,7 @@ export default function Admin() {
         <div className="admin-quick-nav" aria-label="Navigation administration">
           <a href="#general" className="lnk">Accueil</a>
           <a href="#logo" className="lnk">Logo</a>
+          <a href="#photos" className="lnk">Photos</a>
           <a href="#menu" className="lnk">Menu</a>
         </div>
 
@@ -197,6 +302,20 @@ export default function Admin() {
             <option value="right">Droite</option>
           </select>
         </label>
+      </details>
+
+      <details id="photos" className="box">
+        <summary>Optimiser les photos</summary>
+        <p className="sub">
+          Réduit le poids de toutes les photos déjà envoyées, sans perte de qualité visible,
+          pour que le site se charge plus vite. Les originaux restent dans Supabase.
+        </p>
+        <div className="row">
+          <button className="btn" disabled={bulk?.running} onClick={optimizeAll}>
+            {bulk?.running ? 'Optimisation…' : 'Optimiser toutes les photos'}
+          </button>
+        </div>
+        {bulk?.text && <p className="sub">{bulk.text}</p>}
       </details>
 
       <h2 id="menu">Menu</h2>
